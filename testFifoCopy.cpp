@@ -32,17 +32,6 @@ struct ScatteredMemory {
 } __attribute__((packed));
 static_assert(4 == sizeof(ScatteredMemory));
 static_assert(2 == sizeof(ScatteredMemory::m_data));
-
-/******************************************************************************/
-template<
-    size_t  nBytes
->
-struct WordArray : public std::array<uint32_t, nBytes/sizeof(uint32_t)> {
-    static constexpr size_t fifo_width = sizeof(uint32_t);
-
-    static_assert(nBytes >= sizeof(uint32_t));
-    static_assert(0 == (nBytes % sizeof(uint32_t)));
-};
 /******************************************************************************/
 
 /******************************************************************************/
@@ -54,6 +43,19 @@ struct ScatteredArray : public std::array<ScatteredMemory, nBytes/sizeof(uint16_
 
     static_assert(nBytes >= sizeof(uint16_t));
     static_assert(0 == (nBytes % sizeof(uint16_t)));
+};
+/******************************************************************************/
+
+/******************************************************************************/
+template<
+    size_t nBytes,
+    typename T
+>
+struct FifoArray : public std::array<T, nBytes/sizeof(T)> {
+    static constexpr size_t fifo_width = sizeof(T);
+
+    static_assert(nBytes >= sizeof(T));
+    static_assert(0 == (nBytes % sizeof(T)));
 };
 /******************************************************************************/
 
@@ -88,13 +90,63 @@ protected:
 /******************************************************************************/
 
 /******************************************************************************/
-namespace FifoCopyWord {
+namespace FifoCopyByte {
+/******************************************************************************/
+struct FifoCopyByteTest : public FifoCopyTest {
+    void
+    copyData(void) {
+        FifoCopyTest::copyData< FifoArray<m_bufferSz, uint16_t> >(GetParam());
+    }
+};
+
+TEST_P(FifoCopyByteTest, Copy) {
+    copyData();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    FifoCopyByteTests,
+    FifoCopyByteTest,
+    ::testing::Values(
+        1, 2, 4, 8, 64
+    )
+);
+/******************************************************************************/
+} /* namespace FifoCopyByte */
 /******************************************************************************/
 
+/******************************************************************************/
+namespace FifoCopyHalfWord {
+/******************************************************************************/
+struct FifoCopyHalfWordTest : public FifoCopyTest {
+    void
+    copyData(void) {
+        FifoCopyTest::copyData< FifoArray<m_bufferSz, uint16_t> >(GetParam());
+    }
+};
+
+TEST_P(FifoCopyHalfWordTest, Copy) {
+    copyData();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    FifoCopyHalfWordTests,
+    FifoCopyHalfWordTest,
+    ::testing::Values(
+            1, 2, 4, 8, 64
+    )
+);
+
+/******************************************************************************/
+} /* namespace FifoCopyHalfWord */
+/******************************************************************************/
+
+/******************************************************************************/
+namespace FifoCopyWord {
+/******************************************************************************/
 struct FifoCopyWordTest : public FifoCopyTest {
     void
     copyData(void) {
-        FifoCopyTest::copyData< WordArray<m_bufferSz> >(GetParam());
+        FifoCopyTest::copyData< FifoArray<m_bufferSz, uint32_t> >(GetParam());
     }
 };
 
@@ -113,7 +165,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_F(FifoCopyWordTest, PacketLargerThanBuffer) {
     constexpr unsigned byteCount = m_bufferSz;
     std::array<uint8_t, byteCount - 1> targetBuffer;
-    WordArray<m_bufferSz> packet;
+    FifoArray<m_bufferSz, uint16_t> packet;
 
     stm32::copy_to_fifo(m_sourceData, packet, byteCount);
     stm32::copy_from_fifo(packet, targetBuffer, byteCount);
@@ -123,7 +175,7 @@ TEST_F(FifoCopyWordTest, PacketLargerThanBuffer) {
 TEST_F(FifoCopyWordTest, MoreThanPacket) {
     constexpr unsigned byteCount = m_bufferSz + 1;
     std::array<uint8_t, byteCount> targetBuffer;
-    WordArray<m_bufferSz> packet;
+    FifoArray<m_bufferSz, uint16_t> packet;
 
     stm32::copy_to_fifo(m_sourceData, packet, byteCount);
     stm32::copy_from_fifo(packet, targetBuffer, byteCount);
