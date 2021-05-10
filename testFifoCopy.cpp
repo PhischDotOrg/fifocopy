@@ -58,7 +58,7 @@ struct ScatteredArray : public std::array<ScatteredMemory, nBytes/sizeof(uint16_
 /******************************************************************************/
 
 /******************************************************************************/
-class FifoCopyTest : public ::testing::Test {
+class FifoCopyTest : public ::testing::TestWithParam<size_t> {
 protected:
     static constexpr unsigned m_bufferSz = 64u;
 
@@ -74,166 +74,109 @@ protected:
     };
     static_assert(m_bufferSz == sizeof(m_sourceData));
 
-    void SetUp(void) override {
-        // srand (time(NULL));
+    template<typename T>
+    void
+    copyData(size_t p_byteCount) {
+        std::vector<uint8_t> targetBuffer(p_byteCount);
+        T packet;
 
-        // for (auto i : m_sourceData) {
-        //     i = rand() % 256;
-        // }
-    }
-
-    void TearDown() override {
-
+        stm32::copy_to_fifo(m_sourceData, packet, p_byteCount);
+        stm32::copy_from_fifo(packet, targetBuffer, p_byteCount);
+        EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
     }
 };
+/******************************************************************************/
+
+/******************************************************************************/
+namespace FifoCopyWord {
+/******************************************************************************/
 
 struct FifoCopyWordTest : public FifoCopyTest {
-    WordArray<m_bufferSz>       m_packet;
-
-    void SetUp(void) override {
-        ASSERT_EQ(m_bufferSz / sizeof(uint32_t), m_packet.size());
-
-        FifoCopyTest::SetUp();
+    void
+    copyData(void) {
+        FifoCopyTest::copyData< WordArray<m_bufferSz> >(GetParam());
     }
 };
 
-struct FifoCopyScatteredTest : public FifoCopyTest {
-    ScatteredArray<m_bufferSz>  m_packet;
-
-    void SetUp(void) override {
-        EXPECT_EQ(m_bufferSz / sizeof(uint16_t), m_packet.size());
-
-        FifoCopyTest::SetUp();
-    }
-};
-/******************************************************************************/
-
-/******************************************************************************/
-TEST_F(FifoCopyWordTest, CopySingleByte) {
-    constexpr unsigned byteCount = 1;
-    std::array<uint8_t, byteCount> targetBuffer;
-
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
+TEST_P(FifoCopyWordTest, Copy) {
+    copyData();
 }
 
-TEST_F(FifoCopyWordTest, CopyTwoBytes) {
-    constexpr unsigned byteCount = 2;
-    std::array<uint8_t, byteCount> targetBuffer;
-
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
-}
-
-TEST_F(FifoCopyWordTest, CopyOneElement) {
-    constexpr unsigned byteCount = decltype(m_packet)::fifo_width;
-    std::array<uint8_t, byteCount> targetBuffer;
-
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
-}
-
-TEST_F(FifoCopyWordTest, CopyTwoElements) {
-    constexpr unsigned byteCount = decltype(m_packet)::fifo_width;
-    std::array<uint8_t, byteCount> targetBuffer;
-
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
-}
-
-TEST_F(FifoCopyWordTest, CopyFullPacket) {
-    constexpr unsigned byteCount = m_bufferSz;
-    std::array<uint8_t, byteCount> targetBuffer;
-
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
-}
+INSTANTIATE_TEST_SUITE_P(
+    FifoCopyWordTests,
+    FifoCopyWordTest,
+    ::testing::Values(
+            1, 2, 4, 8, 64
+    )
+);
 
 TEST_F(FifoCopyWordTest, PacketLargerThanBuffer) {
     constexpr unsigned byteCount = m_bufferSz;
     std::array<uint8_t, byteCount - 1> targetBuffer;
+    WordArray<m_bufferSz> packet;
 
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
+    stm32::copy_to_fifo(m_sourceData, packet, byteCount);
+    stm32::copy_from_fifo(packet, targetBuffer, byteCount);
     EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
 }
 
 TEST_F(FifoCopyWordTest, MoreThanPacket) {
     constexpr unsigned byteCount = m_bufferSz + 1;
     std::array<uint8_t, byteCount> targetBuffer;
+    WordArray<m_bufferSz> packet;
 
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
+    stm32::copy_to_fifo(m_sourceData, packet, byteCount);
+    stm32::copy_from_fifo(packet, targetBuffer, byteCount);
     EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend() - 1, m_sourceData.begin()));
 }
+
+/******************************************************************************/
+} /* namespace FifoCopyWord */
 /******************************************************************************/
 
 /******************************************************************************/
-TEST_F(FifoCopyScatteredTest, CopySingleByte) {
-    constexpr unsigned byteCount = 1;
-    std::array<uint8_t, byteCount> targetBuffer;
+namespace FifoCopyScattered {
+/******************************************************************************/
 
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
+struct FifoCopyScatteredTest : public FifoCopyTest {
+    void
+    copyData(void) {
+        FifoCopyTest::copyData< ScatteredArray<m_bufferSz> >(GetParam());
+    }
+};
+
+TEST_P(FifoCopyScatteredTest, Copy) {
+    copyData();
 }
 
-TEST_F(FifoCopyScatteredTest, CopyTwoBytes) {
-    constexpr unsigned byteCount = 2;
-    std::array<uint8_t, byteCount> targetBuffer;
-
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
-}
-
-TEST_F(FifoCopyScatteredTest, CopyOneElement) {
-    constexpr unsigned byteCount = decltype(m_packet)::fifo_width;
-    std::array<uint8_t, byteCount> targetBuffer;
-
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
-}
-
-TEST_F(FifoCopyScatteredTest, CopyTwoElements) {
-    constexpr unsigned byteCount = decltype(m_packet)::fifo_width;
-    std::array<uint8_t, byteCount> targetBuffer;
-
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
-}
-
-TEST_F(FifoCopyScatteredTest, CopyFullPacket) {
-    constexpr unsigned byteCount = m_bufferSz;
-    std::array<uint8_t, byteCount> targetBuffer;
-
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
-    EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
-}
+INSTANTIATE_TEST_SUITE_P(
+    FifoCopyScatteredTests,
+    FifoCopyScatteredTest,
+    ::testing::Values(
+            1, 2, 4, 8, 64
+    )
+);
 
 TEST_F(FifoCopyScatteredTest, PacketLargerThanBuffer) {
     constexpr unsigned byteCount = m_bufferSz;
     std::array<uint8_t, byteCount - 1> targetBuffer;
+    ScatteredArray<m_bufferSz> packet;
 
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
+    stm32::copy_to_fifo(m_sourceData, packet, byteCount);
+    stm32::copy_from_fifo(packet, targetBuffer, byteCount);
     EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend(), m_sourceData.begin()));
 }
 
 TEST_F(FifoCopyScatteredTest, MoreThanPacket) {
     constexpr unsigned byteCount = m_bufferSz + 1;
     std::array<uint8_t, byteCount> targetBuffer;
+    ScatteredArray<m_bufferSz> packet;
 
-    stm32::copy_to_fifo(m_sourceData, m_packet, byteCount);
-    stm32::copy_from_fifo(m_packet, targetBuffer, byteCount);
+    stm32::copy_to_fifo(m_sourceData, packet, byteCount);
+    stm32::copy_from_fifo(packet, targetBuffer, byteCount);
     EXPECT_TRUE(std::equal(targetBuffer.cbegin(), targetBuffer.cend() - 1, m_sourceData.begin()));
 }
+
+/******************************************************************************/
+} /* namespace FifoCopyScattered */
 /******************************************************************************/
