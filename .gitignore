@@ -1,3 +1,9 @@
+# CMake Build
+build/
+
+# VSCode stuff.
+.vscode/settings.json
+
 # Prerequisites
 *.d
 
